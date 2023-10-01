@@ -13,8 +13,17 @@ let gameState = {
   Scene: null,
   Camera: null,
   Renderer: null,
+  Clock: null,
 
   playField: new Array(10 * 23).fill(0),
+
+  currentPiece: {
+    position: null,
+    tetraminos: null,
+    rotation: 0,
+    timeTillDrop: 0,
+    superDrop: false
+  },
 
   geometries: {
     I: new THREE.BufferGeometry(),
@@ -229,13 +238,13 @@ function initMeshes() {
   initBufferGeometry(gameState.geometries.J);
   initBufferGeometry(gameState.geometries.L);
 
-  gameState.objects.push(new THREE.Mesh( gameState.geometries.I, new THREE.MeshBasicMaterial( { color: 0x31C7EF, wireframe: true } ) ) );
-  gameState.objects.push(new THREE.Mesh( gameState.geometries.O, new THREE.MeshBasicMaterial( { color: 0xF7D308, wireframe: true } ) ) );
-  gameState.objects.push(new THREE.Mesh( gameState.geometries.T, new THREE.MeshBasicMaterial( { color: 0xAD4D9C, wireframe: true } ) ) );
-  gameState.objects.push(new THREE.Mesh( gameState.geometries.S, new THREE.MeshBasicMaterial( { color: 0x42B642, wireframe: true } ) ) );
-  gameState.objects.push(new THREE.Mesh( gameState.geometries.Z, new THREE.MeshBasicMaterial( { color: 0xEF2029, wireframe: true } ) ) );
-  gameState.objects.push(new THREE.Mesh( gameState.geometries.J, new THREE.MeshBasicMaterial( { color: 0x5A65AD, wireframe: true } ) ) );
-  gameState.objects.push(new THREE.Mesh( gameState.geometries.L, new THREE.MeshBasicMaterial( { color: 0xEF7921, wireframe: true } ) ) );
+  gameState.objects.push(new THREE.Mesh( gameState.geometries.I, new THREE.MeshBasicMaterial( { color: 0x31C7EF, wireframe: false } ) ) );
+  gameState.objects.push(new THREE.Mesh( gameState.geometries.O, new THREE.MeshBasicMaterial( { color: 0xF7D308, wireframe: false } ) ) );
+  gameState.objects.push(new THREE.Mesh( gameState.geometries.T, new THREE.MeshBasicMaterial( { color: 0xAD4D9C, wireframe: false } ) ) );
+  gameState.objects.push(new THREE.Mesh( gameState.geometries.S, new THREE.MeshBasicMaterial( { color: 0x42B642, wireframe: false } ) ) );
+  gameState.objects.push(new THREE.Mesh( gameState.geometries.Z, new THREE.MeshBasicMaterial( { color: 0xEF2029, wireframe: false } ) ) );
+  gameState.objects.push(new THREE.Mesh( gameState.geometries.J, new THREE.MeshBasicMaterial( { color: 0x5A65AD, wireframe: false } ) ) );
+  gameState.objects.push(new THREE.Mesh( gameState.geometries.L, new THREE.MeshBasicMaterial( { color: 0xEF7921, wireframe: false } ) ) );
 
   gameState.objects.forEach(object => gameState.Scene.add(object));
 }
@@ -253,21 +262,10 @@ function init() {
   gameState.Renderer.setSize( window.innerWidth, window.innerHeight );
   document.body.appendChild( gameState.Renderer.domElement );
 
+  gameState.Clock = new THREE.Clock();
+
   // Initialize the meshes
   initMeshes();
-
-  blitTetramino(0, 18, gameState.playField, tetraminoData.T[0]);
-  blitTetramino(0, 16, gameState.playField, tetraminoData.Z[3]);
-  blitTetramino(3, 18, gameState.playField, tetraminoData.I[0]);
-  blitTetramino(1, 16, gameState.playField, tetraminoData.O[0]);
-  blitTetramino(0, 18, gameState.playField, tetraminoData.T[0]);
-  blitTetramino(4, 17, gameState.playField, tetraminoData.J[0]);
-  blitTetramino(8, 17, gameState.playField, tetraminoData.J[3]);
-  blitTetramino(6, 17, gameState.playField, tetraminoData.L[3]);
-  blitTetramino(4, 15, gameState.playField, tetraminoData.T[2]);
-  blitTetramino(6, 15, gameState.playField, tetraminoData.I[1]);
-
-  updateMeshes();
 
   // Begin the render loop
   animate();
@@ -306,8 +304,8 @@ function createMesh(field, geometry, state) {
   vertexIndex = indexIndex = 0;
 
   // Generate the mesh using the greedy meshing algorithm
-  let fieldIndex = getFieldIndex(9, 19);
-  while (fieldIndex >= 0) {
+  let fieldIndex = getFieldIndex(9, 22);
+  while (fieldIndex >= getFieldIndex(0, 3)) {
     if (field[fieldIndex] == state) {
       const startCoord = getFieldCoordinates(fieldIndex);
       let endCoord = startCoord;
@@ -347,19 +345,19 @@ function createMesh(field, geometry, state) {
       const squareIndex = (vertexIndex / 12) * 4
 
       vertices[vertexIndex++] = endCoord.x - 5;
-      vertices[vertexIndex++] = -(startCoord.y + 1 - 10);
+      vertices[vertexIndex++] = -(startCoord.y + 1 - 10) + 3;
       vertexIndex++;
 
       vertices[vertexIndex++] = startCoord.x + 1 - 5;
-      vertices[vertexIndex++] = -(startCoord.y + 1 - 10);
+      vertices[vertexIndex++] = -(startCoord.y + 1 - 10) + 3;
       vertexIndex++;
 
       vertices[vertexIndex++] = startCoord.x + 1 - 5;
-      vertices[vertexIndex++] = -(endCoord.y - 10);
+      vertices[vertexIndex++] = -(endCoord.y - 10) + 3; 
       vertexIndex++;
 
       vertices[vertexIndex++] = endCoord.x - 5;
-      vertices[vertexIndex++] = -(endCoord.y - 10);
+      vertices[vertexIndex++] = -(endCoord.y - 10) + 3;
       vertexIndex++;
 
       indices[indexIndex++] = squareIndex + 0;
@@ -385,8 +383,13 @@ function createMesh(field, geometry, state) {
   } catch (e) {}
 }
 
-function updateMeshes() {
+function draw() {
   let field = gameState.playField.slice();
+
+  if (gameState.currentPiece.position !== null) {
+    const tetramino = gameState.currentPiece.tetraminos[gameState.currentPiece.rotation];
+    blitTetramino(gameState.currentPiece.position.x, gameState.currentPiece.position.y, field, tetramino)
+  }
 
   createMesh(field, gameState.geometries.I, 1);
   createMesh(field, gameState.geometries.O, 2);
@@ -397,9 +400,138 @@ function updateMeshes() {
   createMesh(field, gameState.geometries.L, 7);
 }
 
+function testCollision(x, y, tetramino) {
+  var isColliding = false;
+
+  // Modified version of the blit function
+  tetramino.forEach((state, index) => {
+    if (state != 0) {
+      const fX = x + index % 4;
+      const fY = y + Math.floor(index / 4);
+      isColliding = (gameState.playField[fX + fY * 10] !== 0) || (fY > 22) || (fX < 0) || (fX > 9) || isColliding;
+    }
+  })
+
+  return isColliding;
+}
+
+function nudgePiece(x, y) {
+  if (gameState.currentPiece.position === null) return;
+
+  const newPosition = gameState.currentPiece.position.clone().add(new THREE.Vector2(x, y));
+  if (!testCollision(newPosition.x, newPosition.y, gameState.currentPiece.tetraminos[gameState.currentPiece.rotation])) {
+    gameState.currentPiece.position = newPosition;
+  }
+}
+
+
+function tryRotate() {
+  if (gameState.currentPiece.position === null) return;
+
+  const newRotation = (gameState.currentPiece.rotation + 1) % 4;
+  if (!testCollision(gameState.currentPiece.position.x, gameState.currentPiece.position.y, gameState.currentPiece.tetraminos[newRotation])) {
+    gameState.currentPiece.rotation = newRotation;
+  }
+}
+
+document.onkeydown = function(e) {
+  e.preventDefault();
+  switch (e.key) {
+    case "ArrowLeft":
+      nudgePiece(-1, 0);
+      break;
+    case "ArrowRight":
+      nudgePiece(1, 0);
+      break;
+    case "ArrowDown":
+      nudgePiece(0, 1);
+      break;
+    case "ArrowUp":
+      tryRotate();
+      break;
+  }
+}
+
+document.onkeyup = function(e) {
+  switch (e.key) {
+    case "ArrowDown":
+      gameState.currentPiece.superDrop = false;
+      gameState.currentPiece.timeTillDrop = 1000;
+      break;
+  }
+}
+
 function animate() {
 	requestAnimationFrame( animate );
 
+  const deltaTime = gameState.Clock.getDelta() * 1000;
+
+  if (gameState.currentPiece.position === null) {
+    gameState.currentPiece.position = new THREE.Vector2(3, 1);
+    gameState.currentPiece.rotation = 0;
+    gameState.currentPiece.timeTillDrop = gameState.currentPiece.superDrop ? 100 : 1000;
+
+    switch(Math.floor(Math.random() * 6)) {
+      case 0:
+        gameState.currentPiece.tetraminos = tetraminoData.I;
+        break;
+      case 1:
+        gameState.currentPiece.tetraminos = tetraminoData.O;
+        break;
+      case 2:
+        gameState.currentPiece.tetraminos = tetraminoData.T;
+        break;
+      case 3:
+        gameState.currentPiece.tetraminos = tetraminoData.S;
+        break;
+      case 4:
+        gameState.currentPiece.tetraminos = tetraminoData.Z;
+        break;
+      case 5:
+        gameState.currentPiece.tetraminos = tetraminoData.J;
+        break;
+      case 6:
+        gameState.currentPiece.tetraminos = tetraminoData.L;
+        break;
+    }
+  }
+
+  function lockPiece(x, y, tetramino) {
+    // Lock the piece
+    blitTetramino(x, y, gameState.playField, tetramino);
+    gameState.currentPiece.position = null;
+
+    // Skip the next part if the bottom row isn't full
+    for (let i = getFieldIndex(0, 22); i <= getFieldIndex(9, 22); i++) {
+      if (gameState.playField[i] === 0) {
+        return;
+      }
+    }
+
+    // Tetris!
+    //gameState.playField.splice(getFieldIndex(0, 1), Infinity, gameState.playField.slice(getFieldIndex(0, getFieldIndex(0, 22))));
+    //for (let i = 0; i <= getFieldIndex(9, 0); i++) { // I don't know if this is actually important but I'm still clearing the top row
+    //  gameState.playField[i] = 0;
+    //}
+  }
+
+  if (gameState.currentPiece.timeTillDrop <= 0) {
+    gameState.currentPiece.timeTillDrop = gameState.currentPiece.superDrop ? 100 : 1000;
+    const nextPosition = gameState.currentPiece.position.clone().add(new THREE.Vector2(0, 1));
+
+    // Lock the piece if it's colliding
+    const tetramino = gameState.currentPiece.tetraminos[gameState.currentPiece.rotation];
+    if (testCollision(nextPosition.x, nextPosition.y, tetramino)) {
+      lockPiece(gameState.currentPiece.position.x, gameState.currentPiece.position.y, tetramino);
+    } else {
+      gameState.currentPiece.position = nextPosition;
+    }
+
+  } else {
+    gameState.currentPiece.timeTillDrop -= deltaTime;
+  }
+
+  draw();
 	gameState.Renderer.render( gameState.Scene, gameState.Camera );
 }
 
